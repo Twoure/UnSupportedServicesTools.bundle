@@ -69,6 +69,10 @@ def MainMenu():
     else:
         oc.add(PopupDirectoryObject(key=Callback(MainMenu), title='Install New USS in Plex Web Client ONLY'))
 
+    oc.add(InputDirectoryObject(
+        key=Callback(Search), title='Input Test URL', prompt='Input Test URL'
+        ))
+
     return oc
 
 ####################################################################################################
@@ -99,4 +103,20 @@ def HostMenu():
     if host_list:
         for h in host_list:
             oc.add(PopupDirectoryObject(key=Callback(HostMenu), title=h))
+    return oc
+
+####################################################################################################
+@route(PREFIX + '/test/search')
+def Search(query=''):
+
+    url = query.strip()
+    oc = ObjectContainer(title2='TEST Video URL | %s' %url)
+    if URLService.ServiceIdentifierForURL(url):
+        try:
+            oc.add(URLService.MetadataObjectForURL(url))
+        except Exception as e:
+            Log.Error(str(e))
+            return MessageContainer('Warning', 'This media has expired.')
+    else:
+        return MessageContainer('Warning', 'No URL Service for %s' %url)
     return oc
