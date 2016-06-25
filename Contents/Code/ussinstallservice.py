@@ -301,12 +301,12 @@ class USSInstallService(object):
 
         self.add_history_record(identifier, action, version, notes)
 
-        # Check whether this bundle contains services
+        # Update the bundle info & make sure the bundle registered properly
         if not self.update_bundle_info(identifier):
             Log.Error("Failed to register %s" %identifier)
             return False
 
-        #instruct other plug-ins to reload if necessary
+        # Check whether this bundle contains services & instruct other plug-ins to reload if necessary
         self.check_if_service_reload_required([identifier])
 
         # update current_info
@@ -434,7 +434,7 @@ class USSInstallService(object):
             return message
 
         if self.identifier not in self.bundleservice.bundles:
-            message = "Unable to check update %s because the bundle is not properly register with the server." % self.identifier
+            message = "Unable to check update %s because the bundle is not properly registered with the server." % self.identifier
             Log(message)
             return message
 
