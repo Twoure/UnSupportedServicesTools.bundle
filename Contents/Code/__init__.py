@@ -2,12 +2,14 @@ TITLE = 'UnSupported Services Tools'
 PREFIX = '/applications/unsupportedservicestools'
 IDENTIFIER = 'com.plexapp.system.unsupportedservices'
 UPDATE_URL = 'https://api.github.com/repos/Twoure/UnSupportedServices.bundle/releases/latest'
+INIT_URL = 'https://github.com/Twoure/UnSupportedServices.bundle/archive/master.zip'
+INIT_NAME = 'UnSupportedServices'
 
 ICON = 'icon-default.png'
 ART = 'art-default.jpg'
 
 from ussinstallservice import USSInstallService
-USSI = USSInstallService(IDENTIFIER, UPDATE_URL)
+USSI = USSInstallService(IDENTIFIER, INIT_NAME, INIT_URL, UPDATE_URL)
 
 ####################################################################################################
 def Start():
@@ -31,7 +33,7 @@ def Start():
 def MainMenu():
 
     oc = ObjectContainer(title1=TITLE, no_cache=True)
-    USSI.bundleservice.update_bundle_info(0)
+    USSI.bundleservice.update_bundle_info()
     USSI.info_from_plist(IDENTIFIER)
     pw = True if Client.Product == 'Plex Web' else False
 
@@ -82,7 +84,7 @@ def ActionMenu(action, title):
 
     if action == 'check_update':
         header = 'Check for Update'
-        message = USSI.gui_check_for_update()
+        message = USSI.gui_update(check=True)
     elif action == 'update':
         header = 'Update USS'
         message = USSI.gui_update()
@@ -110,13 +112,13 @@ def HostMenu():
 def Search(query=''):
 
     url = query.strip()
-    oc = ObjectContainer(title2='TEST Video URL | %s' %url)
+    oc = ObjectContainer(title2='TEST Video URL / %s' %url)
     if URLService.ServiceIdentifierForURL(url):
         try:
             oc.add(URLService.MetadataObjectForURL(url))
         except Exception as e:
             Log.Error(str(e))
-            return MessageContainer('Warning', 'This media has expired.')
+            return MessageContainer('Warning', 'This media may have expired.')
     else:
         return MessageContainer('Warning', 'No URL Service for %s' %url)
     return oc

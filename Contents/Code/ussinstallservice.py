@@ -71,9 +71,8 @@ class BundleService(object):
     def bundles(self):
         return self.bundle_dict
 
-    def update_bundle_info(self, t=None):
+    def update_bundle_info(self):
         identifiers = []
-        Thread.Sleep(int(t) if (t or t == 0) else 4)
         plugins_list = XML.ElementFromURL('http://127.0.0.1:32400/:/plugins', cacheTime=0)
 
         for plugin_el in plugins_list.xpath('//Plugin'):
@@ -103,14 +102,16 @@ class BundleService(object):
                 del self.bundle_dict[bundle['identifier']]
 
 class USSInstallService(object):
-    def __init__(self, identifier, update_url):
+    def __init__(self, identifier, name, initial_url, update_url):
         Log.Debug("Starting the USS install service")
         self.installing = False
         self.stage = Core.storage.join_path(Core.storage.data_path, 'DataItems', 'Stage')
         self.inactive = Core.storage.join_path(Core.storage.data_path, 'DataItems', 'Deactivated')
         self.plugins_path = Core.storage.join_path(Core.app_support_path, 'Plug-ins')
         self.bundleservice = BundleService()
+        self.name = name
         self.update_url = update_url
+        self.initial_url = initial_url
         self.identifier = identifier
         self.update_info = dict()
         self.current_info = dict()
@@ -200,7 +201,7 @@ class USSInstallService(object):
             Log.Exception("Unable to reactivate the old installation of %s", identifier)
         return False
 
-    def activate(self, identifier, name, fail_count = 0):
+    def activate(self, identifier, name, fail_count=0):
         stage_path = Core.storage.join_path(self.stage, identifier)
         final_path = Core.storage.join_path(self.plugins_path, ("%s.bundle" %name if not name.endswith('.bundle') else name))
 
@@ -278,6 +279,19 @@ class USSInstallService(object):
 
         return True
 
+    def update_bundle_info(self, identifier, fail_count=0):
+        Log("Updating bundle info")
+        self.bundleservice.update_bundle_info()
+        if identifier not in self.bundleservice.bundles:
+            if fail_count < 5:
+                Log.Info("Waiting 2s and trying again: Try %i of 5" %fail_count+1)
+                Thread.Sleep(2)
+                return self.update_bundle_info(identifier, fail_count+1)
+            else:
+                Log.Info("Too many failures - returning")
+            return False
+        return True
+
     def install(self, identifier, name, remoteUrl, action, version=None, notes=None):
         Log("Performing a full installation of %s" % identifier)
         stage_path = self.setup_stage(identifier)
@@ -287,8 +301,12 @@ class USSInstallService(object):
 
         self.add_history_record(identifier, action, version, notes)
 
-        # Check whether this bundle contains services & instruct other plug-ins to reload if necessary
-        self.bundleservice.update_bundle_info()
+        # Check whether this bundle contains services
+        if not self.update_bundle_info(identifier):
+            Log.Error("Failed to register %s" %identifier)
+            return False
+
+        #instruct other plug-ins to reload if necessary
         self.check_if_service_reload_required([identifier])
 
         # update current_info
@@ -366,11 +384,11 @@ class USSInstallService(object):
     def check_if_service_reload_required(self, identifiers):
         """ Check the list of bundle identifiers to see if any of the bundles contain services. If they do, instruct running plug-ins to reload their service list. """
         bundles = self.bundleservice.bundles
-        Log(bundles)
+        #Log(bundles)
         for ident in identifiers:
             if ident in bundles:
                 bundle = bundles[ident]
-                Log(bundle)
+                #Log(bundle)
                 if bundle['has_services']:
                     Log("At least one bundle containing services has been updated - instructing all running plug-ins to reload.")
                     self.reload_services_in_running_plugins()
@@ -394,43 +412,40 @@ class USSInstallService(object):
         Core.services.load()
 
     def gui_init_install(self):
-        name = "UnSupportedServices"
         action = "Plug-in %s Initial Install" %name
         version = "initial"
         notes = "Initial install of USS"
-        initial_url = "https://github.com/Twoure/UnSupportedServices.bundle/archive/master.zip"
 
-        if not self.install(self.identifier, name, initial_url, action, version, notes):
+        if not self.install(self.identifier, self.name, self.initial_url, action, version, notes):
             return "USS initial install faild"
 
+        if not self.info_from_plist(self.identifier):
+            return "USS failed to install"
+
         if not bool(self.current_info):
-            self.bundleservice.update_bundle_info()
-            if not bool(self.info_from_plist(self.identifier)):
-                return "USS installed but failed to register"
+            return "USS installed but failed to register"
 
         return "USS installed initial v%s" %self.current_info['version']
 
-    def gui_update(self):
+    def gui_update(self, check=False):
+        if not self.info_from_plist(self.identifier):
+            message = "Unable to check update %s because it isn't installed." % self.identifier
+            Log(message)
+            return message
+
         if self.identifier not in self.bundleservice.bundles:
-            Log("Unable to check update %s because it isn't installed." % self.identifier)
-            return "Unable to check update %s because it isn't installed." % self.identifier
+            message = "Unable to check update %s because the bundle is not properly register with the server." % self.identifier
+            Log(message)
+            return message
 
-        if not self.update(self.identifier):
-            self.bundleservice.update_bundle_info()
-            if not bool(self.info_from_plist(self.identifier)):
-                return "Unable to update %s because there is no update."
-
-        return "USS updated to v%s" %self.current_info['version']
-
-    def gui_check_for_update(self):
-        if self.identifier not in self.bundleservice.bundles:
-            Log("Unable to check update %s because it isn't installed." % self.identifier)
-            return "Unable to check update %s because it isn't installed." % self.identifier
-
-        if not self.check_update(self.identifier):
-            return "No Update Available"
-
-        return "v%s Update Available" %self.update_info['version']
+        if check:
+            if not self.check_update(self.identifier):
+                return "No Update Available"
+            return "v%s Update Available" %self.update_info['version']
+        else:
+            if not self.update(self.identifier):
+                return "Unable to update %s because there is no update." % self.identifier
+            return "USS updated to v%s" %self.current_info['version']
 
     def gui_host_list(self):
         if self.identifier not in self.bundleservice.bundles:
@@ -459,5 +474,3 @@ class USSInstallService(object):
                                         self.host_list.append(r.group(1))
 
         return sorted(self.host_list)
-
-# TODO Find better way to wait on PMS to update core bundles
