@@ -284,9 +284,10 @@ class USSInstallService(object):
         self.bundleservice.update_bundle_info()
         if identifier not in self.bundleservice.bundles:
             if fail_count < 5:
-                Log.Info("Waiting 2s and trying again: Try %i of 5" %fail_count+1)
+                fail_count += 1
+                Log.Info("Waiting 2s and trying again: Try %s of 5" %str(fail_count))
                 Thread.Sleep(2)
-                return self.update_bundle_info(identifier, fail_count+1)
+                return self.update_bundle_info(identifier, fail_count)
             else:
                 Log.Info("Too many failures - returning")
             return False
@@ -412,7 +413,7 @@ class USSInstallService(object):
         Core.services.load()
 
     def gui_init_install(self):
-        action = "Plug-in %s Initial Install" %name
+        action = "Plug-in %s Initial Install" %self.name
         version = "initial"
         notes = "Initial install of USS"
 
