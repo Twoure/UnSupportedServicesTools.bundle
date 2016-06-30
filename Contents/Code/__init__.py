@@ -112,7 +112,7 @@ def HostMenu():
 def Search(query=''):
 
     url = query.strip()
-    url = ('http://' + url if not url.startswith('//') else 'http:' + url) if not url.startswith('http') else url
+    url = ('http://' + url if not url.startswith('//') else 'http:' + url) if (not url.startswith('http') and not url.startswith('uss/')) else url
     oc = ObjectContainer(title2='TEST Video URL / %s' %url)
     if URLService.ServiceIdentifierForURL(url):
         try:
