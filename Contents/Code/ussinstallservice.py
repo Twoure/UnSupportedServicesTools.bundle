@@ -182,6 +182,12 @@ class USSInstallService(object):
         return record[0]
 
     def setup_current_info(self, identifier):
+        if identifier not in self.bundleservice.bundles:
+            # clean curernt_info incase of leftover info
+            self.current_info.clear()
+            Log("Unable to setup current info for %s because the bundle is not installed." % identifier)
+            return False
+
         record = self.read_last_history_record(identifier)
         if record:
             info = dict()
@@ -190,7 +196,6 @@ class USSInstallService(object):
                 info['notes'] = record[NOTES_KEY]
 
             self.current_info.update(info)
-        #Log(self.current_info)
         return bool(self.current_info)
 
     def setup_stage(self, identifier):
@@ -338,14 +343,6 @@ class USSInstallService(object):
 
         self.add_history_record(identifier, action, version, notes)
 
-        # restart system bundle so it will catch the updated
-        if update:
-            try:
-                HTTP.Request('http://127.0.0.1:32400/:/plugins/com.plexapp.system/restart', immediate=True)
-            except Ex.HTTPError, e:
-                Log.Error('Failed to restart com.plexapp.system.')
-                Log.Error('Error Info = %s' %str(e))
-
         # Update the bundle info & make sure the bundle registered properly
         if not self.update_bundle_info(identifier):
             Log.Error("Failed to register %s" %identifier)
@@ -356,6 +353,14 @@ class USSInstallService(object):
 
         # update current_info
         self.setup_current_info(identifier)
+
+        # restart system bundle so it will catch the updated
+        if update:
+            try:
+                HTTP.Request('http://127.0.0.1:32400/:/plugins/com.plexapp.system/restart', immediate=True)
+            except Ex.HTTPError, e:
+                Log.Error('Failed to restart com.plexapp.system.')
+                Log.Error('Error Info = %s' %str(e))
 
         Log("Installation of %s complete" % identifier)
         return True
