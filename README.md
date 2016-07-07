@@ -30,7 +30,7 @@ This is a plugin that creates a new channel in [Plex Media Server](https://plex.
 ***
 ## Issues
 
-- Sometimes after USS install, the bundle failes to register correctly.  This is a timing issue, and needs to be worked out.
+- Sometimes the USST channel timeouts when installing. Normally it will continue to install, but sometimes this is an indicator of an error.
 
 ***
 ## [Changelog](Changelog.md#changelog)
