@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 # UnSupportedServices Updater
+#------------------------------------------------------------
+# Code modified from installservice.py and bundleservice.py
+#------------------------------------------------------------
 # Edited by: Twoure
-# Date: 06/11/2016
+# Date: 07/07/2016
 
 KEY_PLIST_VERSION           = 'CFBundleVersion'
 KEY_PLIST_URL               = 'PlexPluginVersionUrl'
@@ -65,6 +68,7 @@ class BundleService(object):
     def __init__(self):
         self.plugins_path = Core.storage.join_path(Core.app_support_path, 'Plug-ins')
         self.bundle_dict = dict()
+        self.update_lock = Thread.Lock()
         self.update_bundle_info()
 
     @property
@@ -72,37 +76,41 @@ class BundleService(object):
         return self.bundle_dict
 
     def update_bundle_info(self):
-        identifiers = []
-        plugins_list = XML.ElementFromURL('http://127.0.0.1:32400/:/plugins', cacheTime=0)
+        try:
+            self.update_lock.acquire()
+            identifiers = []
+            plugins_list = XML.ElementFromURL('http://127.0.0.1:32400/:/plugins', cacheTime=0)
 
-        for plugin_el in plugins_list.xpath('//Plugin'):
-            identifiers.append(plugin_el.get('identifier'))
+            for plugin_el in plugins_list.xpath('//Plugin'):
+                identifiers.append(plugin_el.get('identifier'))
 
-        if Core.bundled_plugins_path is not None:
-            bundled_plugin_paths = {d : Core.storage.join_path(Core.bundled_plugins_path, d) for d in Core.storage.list_dir(Core.bundled_plugins_path) if d.endswith('.bundle')}
-        else:
-            bundled_plugin_paths = {}
-        plugin_paths = {d : Core.storage.join_path(self.plugins_path, d) for d in Core.storage.list_dir(self.plugins_path) if d.endswith('.bundle')}
+            if Core.bundled_plugins_path is not None:
+                bundled_plugin_paths = {d : Core.storage.join_path(Core.bundled_plugins_path, d) for d in Core.storage.list_dir(Core.bundled_plugins_path) if d.endswith('.bundle')}
+            else:
+                bundled_plugin_paths = {}
+            plugin_paths = {d : Core.storage.join_path(self.plugins_path, d) for d in Core.storage.list_dir(self.plugins_path) if d.endswith('.bundle')}
 
-        combine_plugin_paths = dict()
-        combine_plugin_paths.update(bundled_plugin_paths)
-        combine_plugin_paths.update(plugin_paths)
+            combine_plugin_paths = dict()
+            combine_plugin_paths.update(bundled_plugin_paths)
+            combine_plugin_paths.update(plugin_paths)
 
-        for name in combine_plugin_paths.keys():
-            bundle = BundleInfo(combine_plugin_paths[name], name).info
-            if bundle['ignore']:
-                continue
+            for name in combine_plugin_paths.keys():
+                bundle = BundleInfo(combine_plugin_paths[name], name).info
+                if bundle['ignore']:
+                    continue
 
-            if bundle['identifier'] in identifiers:
-                self.bundle_dict[bundle['identifier']] = {
-                    'name': bundle['name'], 'has_services': bundle['has_services'],
-                    'bundled': bundle['bundled'], 'path': combine_plugin_paths[name]
-                    }
-            elif bundle['identifier'] in self.bundle_dict.keys():
-                del self.bundle_dict[bundle['identifier']]
+                if bundle['identifier'] in identifiers:
+                    self.bundle_dict[bundle['identifier']] = {
+                        'name': bundle['name'], 'has_services': bundle['has_services'],
+                        'bundled': bundle['bundled'], 'path': combine_plugin_paths[name]
+                        }
+                elif bundle['identifier'] in self.bundle_dict.keys():
+                    del self.bundle_dict[bundle['identifier']]
+        finally:
+            self.update_lock.release()
 
 class USSInstallService(object):
-    def __init__(self, identifier, name, initial_url, update_url):
+    def __init__(self, identifier, name):
         Log.Debug("Starting the USS install service")
         self.installing = False
         self.stage = Core.storage.join_path(Core.storage.data_path, 'DataItems', 'Stage')
@@ -110,13 +118,13 @@ class USSInstallService(object):
         self.plugins_path = Core.storage.join_path(Core.app_support_path, 'Plug-ins')
         self.bundleservice = BundleService()
         self.name = name
-        self.update_url = update_url
-        self.initial_url = initial_url
+        self.archive_url = 'https://github.com/%s/archive/%s.zip'
+        self.commits_url = 'https://api.github.com/repos/%s/commits/%s'
         self.identifier = identifier
+        self.temp_info = dict()
         self.update_info = dict()
         self.current_info = dict()
         self.host_list = list()
-        self.info_from_plist(identifier)
 
         try:
             Core.storage.remove_tree(self.stage)
@@ -135,6 +143,8 @@ class USSInstallService(object):
         else:
             self.history = list()
         self.history_lock = Thread.Lock()
+
+        self.setup_current_info(identifier)
 
     def info_record(self, identifier, action, version=None, notes=None):
         info = dict()
@@ -156,6 +166,32 @@ class USSInstallService(object):
             Dict.Save()
         finally:
             self.history_lock.release()
+
+    def read_history_record(self, identifier):
+        ident_history = list()
+        for item in self.history:
+            if item[IDENTIFIER_KEY] == identifier:
+                ident_history.append(item)
+        return ident_history
+
+    def read_last_history_record(self, identifier):
+        record = self.read_history_record(identifier)
+        if not record:
+            return False
+        record.reverse()
+        return record[0]
+
+    def setup_current_info(self, identifier):
+        record = self.read_last_history_record(identifier)
+        if record:
+            info = dict()
+            info['date'] = record[VERSION_KEY]
+            if NOTES_KEY in record.keys():
+                info['notes'] = record[NOTES_KEY]
+
+            self.current_info.update(info)
+        #Log(self.current_info)
+        return bool(self.current_info)
 
     def setup_stage(self, identifier):
         stage_path = Core.storage.join_path(self.stage, identifier)
@@ -293,7 +329,7 @@ class USSInstallService(object):
             return False
         return True
 
-    def install(self, identifier, name, remoteUrl, action, version=None, notes=None):
+    def install(self, identifier, name, remoteUrl, action, version=None, notes=None, update=False):
         Log("Performing a full installation of %s" % identifier)
         stage_path = self.setup_stage(identifier)
 
@@ -301,6 +337,14 @@ class USSInstallService(object):
             return False
 
         self.add_history_record(identifier, action, version, notes)
+
+        # restart system bundle so it will catch the updated
+        if update:
+            try:
+                HTTP.Request('http://127.0.0.1:32400/:/plugins/com.plexapp.system/restart', immediate=True)
+            except Ex.HTTPError, e:
+                Log.Error('Failed to restart com.plexapp.system.')
+                Log.Error('Error Info = %s' %str(e))
 
         # Update the bundle info & make sure the bundle registered properly
         if not self.update_bundle_info(identifier):
@@ -311,68 +355,49 @@ class USSInstallService(object):
         self.check_if_service_reload_required([identifier])
 
         # update current_info
-        self.info_from_plist(identifier)
+        self.setup_current_info(identifier)
 
         Log("Installation of %s complete" % identifier)
         return True
 
-    def normalize_version(self, version):
-        if version[:1] == 'v':
-            version = version[1:]
-        return version
-
-    def parse_version(self, version):
+    def get_install_version(self, repo, branch):
+        url = self.commits_url % (repo, branch)
         try:
-            return tuple(map(int, (version.split('.'))))
+            info = JSON.ObjectFromURL(url, cacheTime=CHECK_INTERVAL, timeout=5)
+            date = Datetime.ParseDate(info['commit']['committer']['date']).strftime("%Y-%m-%d %H:%M:%S")
+            message = info['commit']['message']
+            self.temp_info.update({'date': date, 'notes': message})
         except:
-            # String comparison by default
-            return version
-
-    def info_from_plist(self, identifier):
-        if identifier not in self.bundleservice.bundles:
-            self.current_info.clear()
-            Log("Unable to check update %s because it isn't installed." % identifier)
             return False
 
-        bundle = self.bundleservice.bundles[identifier]
-        try:
-            plist = Plist.ObjectFromString(Core.storage.load(Core.storage.join_path(self.plugins_path, bundle['name'], 'Contents', 'Info.plist')))
-            self.current_info.update({'version': plist[KEY_PLIST_VERSION]})
-        except Exception as e:
-            Log.Critical(str(e))
-            pass
+        return bool(self.temp_info)
 
-        return bool(self.current_info)
-
-    def check_update(self, identifier):
-        try:
-            info = JSON.ObjectFromURL(self.update_url, cacheTime=CHECK_INTERVAL, timeout=5)
-            version = self.normalize_version(info[KEY_DATA_VERSION])
-            remoteUrl = info[KEY_DATA_ZIPBALL]
-        except:
+    def check_update(self, identifier, repo, branch):
+        if not self.get_install_version(repo, branch):
+            Log("Unable to check update %s because it has not commits" % identifier)
             return False
 
         if identifier not in self.bundleservice.bundles:
             Log("Unable to check update %s because it isn't installed." % identifier)
             return False
 
-        if self.parse_version(version) > self.parse_version(self.current_info['version']):
+        if self.temp_info['date'] > self.current_info['date']:
             self.update_info.update({
-                'version': version, 'remoteUrl': remoteUrl,
-                'notes': info[KEY_DATA_DESC] if KEY_DATA_DESC in info else ''
+                'date': self.temp_info['date'], 'notes': self.temp_info['notes']
                 })
 
         return bool(self.update_info)
 
-    def update(self, identifier):
-        if self.check_update(identifier):
+    def update(self, identifier, repo, branch):
+        if self.check_update(identifier, repo, branch):
             if identifier not in self.bundleservice.bundles:
                 Log("Unable to update %s because it isn't installed." % identifier)
                 return False
 
             bundle = self.bundleservice.bundles[identifier]
+            archive_url = self.archive_url % (repo, branch)
 
-            if not self.install(identifier, bundle['name'], self.update_info['remoteUrl'], 'Plug-in Updated', version=self.update_info['version'], notes=self.update_info['notes']):
+            if not self.install(identifier, bundle['name'], archive_url, 'Plug-in Updated', self.update_info['date'], self.update_info['notes'], True):
                 return False
 
             # cleanup update_info key
@@ -385,11 +410,9 @@ class USSInstallService(object):
     def check_if_service_reload_required(self, identifiers):
         """ Check the list of bundle identifiers to see if any of the bundles contain services. If they do, instruct running plug-ins to reload their service list. """
         bundles = self.bundleservice.bundles
-        #Log(bundles)
         for ident in identifiers:
             if ident in bundles:
                 bundle = bundles[ident]
-                #Log(bundle)
                 if bundle['has_services']:
                     Log("At least one bundle containing services has been updated - instructing all running plug-ins to reload.")
                     self.reload_services_in_running_plugins()
@@ -398,11 +421,15 @@ class USSInstallService(object):
 
     def reload_services_in_running_plugins(self):
         """ Get the list of plug-ins from PMS, and tell any that are running to reload services """
+        no_reload = [
+            'com.plexapp.plugins.unsupportedservicestools', 'com.plexapp.plugins.WebTools',
+            'com.plexapp.plugins.uasviewer', 'com.plexapp.plugins.trakttv'
+            ]
         plugins_list = XML.ElementFromURL('http://127.0.0.1:32400/:/plugins', cacheTime=0)
         for plugin_el in plugins_list.xpath('//Plugin'):
             if str(plugin_el.get('state')) == '0':
                 ident = str(plugin_el.get('identifier'))
-                if ident != "com.plexapp.plugins.unsupportedservicestools":
+                if ident not in no_reload:
                     try:
                         Log("Plug-in %s is currrently running with old service code - reloading", ident)
                         HTTP.Request('http://127.0.0.1:32400/:/plugins/%s/reloadServices' % ident, cacheTime=0, immediate=True)
@@ -412,24 +439,30 @@ class USSInstallService(object):
         # Reload system services
         Core.services.load()
 
-    def gui_init_install(self):
+    def gui_init_install(self, repo, branch):
+        if not self.get_install_version(repo, branch):
+            Log("Unable to install %s because %s branch has no commits" % (self.identifier, branch))
+            return "USS inital Install faid, dut to no commits in %s branch" % branch
+
         action = "Plug-in %s Initial Install" %self.name
-        version = "initial"
-        notes = "Initial install of USS"
+        version = self.temp_info['date']
+        archive_url = self.archive_url % (repo, branch)
 
-        if not self.install(self.identifier, self.name, self.initial_url, action, version, notes):
+        if 'notes' in self.temp_info.keys() and self.temp_info['notes'] != '':
+            notes = self.temp_info['notes']
+        else:
+            notes = "Initial install of USS"
+
+        if not self.install(self.identifier, self.name, archive_url, action, version, notes):
             return "USS initial install faild"
-
-        if not self.info_from_plist(self.identifier):
-            return "USS failed to install"
 
         if not bool(self.current_info):
             return "USS installed but failed to register"
 
-        return "USS installed initial v%s" %self.current_info['version']
+        return "USS installed | %s" %str(self.current_info['date'])
 
-    def gui_update(self, check=False):
-        if not self.info_from_plist(self.identifier):
+    def gui_update(self, repo, branch, check=False):
+        if not self.current_info:
             message = "Unable to check update %s because it isn't installed." % self.identifier
             Log(message)
             return message
@@ -440,13 +473,13 @@ class USSInstallService(object):
             return message
 
         if check:
-            if not self.check_update(self.identifier):
+            if not self.check_update(self.identifier, repo, branch):
                 return "No Update Available"
-            return "v%s Update Available" %self.update_info['version']
+            return "%s | Update Available" %str(self.update_info['date'])
         else:
-            if not self.update(self.identifier):
+            if not self.update(self.identifier, repo, branch):
                 return "Unable to update %s because there is no update." % self.identifier
-            return "USS updated to v%s" %self.current_info['version']
+            return "USS updated | %s" %str(self.current_info['date'])
 
     def gui_host_list(self):
         if self.identifier not in self.bundleservice.bundles:
@@ -454,9 +487,7 @@ class USSInstallService(object):
             return False
 
         bundle = self.bundleservice.bundles[self.identifier]
-
-        plist = Plist.ObjectFromString(Core.storage.load(Core.storage.join_path(bundle['path'], "Contents", "Info.plist")))
-        service_dict = Core.services.get_services_from_bundle(bundle['path'], plist)
+        service_dict = Core.services.get_services_from_bundle(bundle['path'])
 
         if bool(self.host_list):
             self.host_list = list()

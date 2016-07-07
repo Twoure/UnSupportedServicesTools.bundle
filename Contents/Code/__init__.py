@@ -1,15 +1,16 @@
 TITLE = 'UnSupported Services Tools'
 PREFIX = '/applications/unsupportedservicestools'
 IDENTIFIER = 'com.plexapp.system.unsupportedservices'
-UPDATE_URL = 'https://api.github.com/repos/Twoure/UnSupportedServices.bundle/releases/latest'
-INIT_URL = 'https://github.com/Twoure/UnSupportedServices.bundle/archive/master.zip'
+#UPDATE_URL = 'https://api.github.com/repos/Twoure/UnSupportedServices.bundle/releases/latest'
+#INIT_URL = 'https://github.com/Twoure/UnSupportedServices.bundle/archive/master.zip'
 INIT_NAME = 'UnSupportedServices'
+REPO = 'Twoure/UnSupportedServices.bundle'
 
 ICON = 'icon-default.png'
 ART = 'art-default.jpg'
 
 from ussinstallservice import USSInstallService
-USSI = USSInstallService(IDENTIFIER, INIT_NAME, INIT_URL, UPDATE_URL)
+USSI = USSInstallService(IDENTIFIER, INIT_NAME)
 
 ####################################################################################################
 def Start():
@@ -34,16 +35,16 @@ def MainMenu():
 
     oc = ObjectContainer(title1=TITLE, no_cache=True)
     USSI.bundleservice.update_bundle_info()
-    USSI.info_from_plist(IDENTIFIER)
+    USSI.setup_current_info(IDENTIFIER)
     pw = True if Client.Product == 'Plex Web' else False
 
     if bool(USSI.current_info):
-        oc.add(DirectoryObject(key=Callback(MainMenu), title='v%s Installed' %USSI.current_info['version']))
+        oc.add(DirectoryObject(key=Callback(MainMenu), title='%s Installed' %str(USSI.current_info['date'])))
 
         if bool(USSI.update_info) and pw:
             oc.add(DirectoryObject(
                 key=Callback(ActionMenu, action='update', title='Installing Update'),
-                title='v%s Available - Install Update' %USSI.update_info['version'],
+                title='%s Available - Install Update' %str(USSI.update_info['date']),
                 summary=USSI.update_info['notes'] if USSI.update_info['notes'] else None
                 ))
 
@@ -71,6 +72,7 @@ def MainMenu():
     else:
         oc.add(PopupDirectoryObject(key=Callback(MainMenu), title='Install New USS in Plex Web Client ONLY'))
 
+    oc.add(PrefsObject(title='Preferences'))
     oc.add(InputDirectoryObject(
         key=Callback(Search), title='Input Test URL', prompt='Input Test URL'
         ))
@@ -82,15 +84,17 @@ def MainMenu():
 def ActionMenu(action, title):
     oc = ObjectContainer(title2=title, no_cache=True)
 
+    branch = Prefs['branch']
+
     if action == 'check_update':
         header = 'Check for Update'
-        message = USSI.gui_update(check=True)
+        message = USSI.gui_update(REPO, branch, check=True)
     elif action == 'update':
         header = 'Update USS'
-        message = USSI.gui_update()
+        message = USSI.gui_update(REPO, branch)
     elif action == 'init':
         header = 'USS Initial Install'
-        message = USSI.gui_init_install()
+        message = USSI.gui_init_install(REPO, branch)
     else:
         header = 'Action Menu'
         message = 'No Action Taken'

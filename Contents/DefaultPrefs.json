@@ -1,0 +1,9 @@
+[
+  {
+    "id": "branch",
+    "label": "Repo Branch",
+    "type": "enum",
+    "values": ["master", "dev"],
+    "default": "master"
+  }
+]
