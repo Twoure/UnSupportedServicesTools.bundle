@@ -379,7 +379,7 @@ class USSInstallService(object):
 
     def check_update(self, identifier, repo, branch):
         if not self.get_install_version(repo, branch):
-            Log("Unable to check update %s because it has not commits" % identifier)
+            Log("Unable to check update %s because it has no commits" % identifier)
             return False
 
         if identifier not in self.bundleservice.bundles:
@@ -447,7 +447,7 @@ class USSInstallService(object):
     def gui_init_install(self, repo, branch):
         if not self.get_install_version(repo, branch):
             Log("Unable to install %s because %s branch has no commits" % (self.identifier, branch))
-            return "USS inital Install faid, dut to no commits in %s branch" % branch
+            return "USS inital Install failed, due to no commits in %s branch" % branch
 
         action = "Plug-in %s Initial Install" %self.name
         version = self.temp_info['date']
@@ -459,7 +459,7 @@ class USSInstallService(object):
             notes = "Initial install of USS"
 
         if not self.install(self.identifier, self.name, archive_url, action, version, notes):
-            return "USS initial install faild"
+            return "USS initial install failed"
 
         if not bool(self.current_info):
             return "USS installed but failed to register"

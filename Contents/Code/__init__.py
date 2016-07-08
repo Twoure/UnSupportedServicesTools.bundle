@@ -1,8 +1,13 @@
+####################################################################################################
+#                                                                                                  #
+#                           UnSupported Services Tools (Plex Channel)                              #
+#                                                                                                  #
+####################################################################################################
+
 TITLE = 'UnSupported Services Tools'
 PREFIX = '/applications/unsupportedservicestools'
+
 IDENTIFIER = 'com.plexapp.system.unsupportedservices'
-#UPDATE_URL = 'https://api.github.com/repos/Twoure/UnSupportedServices.bundle/releases/latest'
-#INIT_URL = 'https://github.com/Twoure/UnSupportedServices.bundle/archive/master.zip'
 INIT_NAME = 'UnSupportedServices'
 REPO = 'Twoure/UnSupportedServices.bundle'
 
@@ -117,7 +122,7 @@ def Search(query=''):
 
     url = query.strip()
     url = ('http://' + url if not url.startswith('//') else 'http:' + url) if (not url.startswith('http') and not url.startswith('uss/')) else url
-    oc = ObjectContainer(title2='TEST Video URL / %s' %url)
+    oc = ObjectContainer(title2='TEST Video URL = %s' %url)
     if URLService.ServiceIdentifierForURL(url):
         try:
             oc.add(URLService.MetadataObjectForURL(url))
