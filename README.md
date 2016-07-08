@@ -32,7 +32,7 @@ This is a plugin that creates a new channel in [Plex Media Server](https://plex.
 ***
 ## Issues
 
-- Sometimes the USST channel timeouts when installing. Normally it will continue to install, but sometimes this is an indicator of an error.
+- Sometimes the USST channel timeouts when installing. Normally it will continue to install, but at-times this is indicative to an error.
 
 ***
 ## [Changelog](Changelog.md#changelog)
