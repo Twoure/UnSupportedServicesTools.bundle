@@ -4,10 +4,6 @@
 <dict>
   <key>CFBundleIdentifier</key>
   <string>com.plexapp.plugins.unsupportedservicestools</string>
-  <key>CFBundleVersion</key>
-  <string>1.0.1</string>
-  <key>PlexPluginVersionUrl</key>
-  <string>https://api.github.com/repos/Twoure/UnSupportedServicesTools.bundle/releases/latest</string>
   <key>PlexClientPlatforms</key>
   <string>*</string>
   <key>PlexFrameworkVersion</key>

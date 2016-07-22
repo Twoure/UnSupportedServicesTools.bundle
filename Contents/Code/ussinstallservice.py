@@ -4,25 +4,16 @@
 # Code modified from installservice.py and bundleservice.py
 #------------------------------------------------------------
 # Edited by: Twoure
-# Date: 07/07/2016
+# Date: 07/21/2016
 
-KEY_PLIST_VERSION           = 'CFBundleVersion'
-KEY_PLIST_URL               = 'PlexPluginVersionUrl'
-
-KEY_DATA_VERSION            = 'tag_name'
-KEY_DATA_DESC               = 'body'
-KEY_DATA_ZIPBALL            = 'zipball_url'
-
-#CHECK_INTERVAL              = CACHE_1HOUR * 12
 CHECK_INTERVAL              = 0
-
 HISTORY_KEY                 = "_UnSupportedServices:History"
-
 IDENTIFIER_KEY              = "InstallIdentifier"
 NOTES_KEY                   = "InstallNotes"
 DATE_KEY                    = "InstallDate"
 VERSION_KEY                 = "InstallVersion"
 ACTION_KEY                  = "InstallAction"
+BRANCH_KEY                  = "InstallBranch"
 
 class BundleInfo(object):
     def __init__(self, plugin_path, name):
@@ -146,19 +137,20 @@ class USSInstallService(object):
 
         self.setup_current_info(identifier)
 
-    def info_record(self, identifier, action, version=None, notes=None):
+    def info_record(self, identifier, action, branch, version=None, notes=None):
         info = dict()
         info[IDENTIFIER_KEY] = identifier
         info[DATE_KEY] = Datetime.Now()
         info[ACTION_KEY] = action
+        info[BRANCH_KEY] = branch
         if notes:
             info[NOTES_KEY] = notes
         if version:
             info[VERSION_KEY] = version
         return info
 
-    def add_history_record(self, identifier, action, version=None, notes=None):
-        info = self.info_record(identifier, action, version, notes)
+    def add_history_record(self, identifier, action, branch, version=None, notes=None):
+        info = self.info_record(identifier, action, branch, version, notes)
         try:
             self.history_lock.acquire()
             self.history.append(info)
@@ -192,6 +184,7 @@ class USSInstallService(object):
         if record:
             info = dict()
             info['date'] = record[VERSION_KEY]
+            info['branch'] = record[BRANCH_KEY]
             if NOTES_KEY in record.keys():
                 info['notes'] = record[NOTES_KEY]
 
@@ -334,25 +327,19 @@ class USSInstallService(object):
             return False
         return True
 
-    def install(self, identifier, name, remoteUrl, action, version=None, notes=None, update=False):
+    def install(self, identifier, name, remoteUrl, action, branch, version=None, notes=None, update=False):
         Log("Performing a full installation of %s" % identifier)
         stage_path = self.setup_stage(identifier)
 
         if not self.install_zip_from_url(identifier, name, remoteUrl):
             return False
 
-        self.add_history_record(identifier, action, version, notes)
+        self.add_history_record(identifier, action, branch, version, notes)
 
         # Update the bundle info & make sure the bundle registered properly
         if not self.update_bundle_info(identifier):
             Log.Error("Failed to register %s" %identifier)
             return False
-
-        # Check whether this bundle contains services & instruct other plug-ins to reload if necessary
-        self.check_if_service_reload_required([identifier])
-
-        # update current_info
-        self.setup_current_info(identifier)
 
         # restart system bundle so it will catch the updated
         if update:
@@ -361,6 +348,12 @@ class USSInstallService(object):
             except Ex.HTTPError, e:
                 Log.Error('Failed to restart com.plexapp.system.')
                 Log.Error('Error Info = %s' %str(e))
+
+        # Check whether this bundle contains services & instruct other plug-ins to reload if necessary
+        self.check_if_service_reload_required([identifier])
+
+        # update current_info
+        self.setup_current_info(identifier)
 
         Log("Installation of %s complete" % identifier)
         return True
@@ -371,7 +364,7 @@ class USSInstallService(object):
             info = JSON.ObjectFromURL(url, cacheTime=CHECK_INTERVAL, timeout=5)
             date = Datetime.ParseDate(info['commit']['committer']['date']).strftime("%Y-%m-%d %H:%M:%S")
             message = info['commit']['message']
-            self.temp_info.update({'date': date, 'notes': message})
+            self.temp_info.update({'date': date, 'notes': message, 'branch': branch})
         except:
             return False
 
@@ -388,7 +381,8 @@ class USSInstallService(object):
 
         if self.temp_info['date'] > self.current_info['date']:
             self.update_info.update({
-                'date': self.temp_info['date'], 'notes': self.temp_info['notes']
+                'date': self.temp_info['date'], 'notes': self.temp_info['notes'],
+                'branch': self.temp_info['branch']
                 })
 
         return bool(self.update_info)
@@ -402,7 +396,7 @@ class USSInstallService(object):
             bundle = self.bundleservice.bundles[identifier]
             archive_url = self.archive_url % (repo, branch)
 
-            if not self.install(identifier, bundle['name'], archive_url, 'Plug-in Updated', self.update_info['date'], self.update_info['notes'], True):
+            if not self.install(identifier, bundle['name'], archive_url, 'Plug-in Updated', branch, self.update_info['date'], self.update_info['notes'], True):
                 return False
 
             # cleanup update_info key
@@ -458,7 +452,7 @@ class USSInstallService(object):
         else:
             notes = "Initial install of USS"
 
-        if not self.install(self.identifier, self.name, archive_url, action, version, notes):
+        if not self.install(self.identifier, self.name, archive_url, action, branch, version, notes):
             return "USS initial install failed"
 
         if not bool(self.current_info):

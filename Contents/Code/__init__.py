@@ -12,7 +12,7 @@ INIT_NAME = 'UnSupportedServices'
 REPO = 'Twoure/UnSupportedServices.bundle'
 
 ICON = 'icon-default.png'
-ART = 'art-default.jpg'
+#ART = 'art-default.jpg'
 
 from ussinstallservice import USSInstallService
 USSI = USSInstallService(IDENTIFIER, INIT_NAME)
@@ -44,22 +44,35 @@ def MainMenu():
     pw = True if Client.Product == 'Plex Web' else False
 
     if bool(USSI.current_info):
-        oc.add(DirectoryObject(key=Callback(MainMenu), title='%s Installed' %str(USSI.current_info['date'])))
-
-        if bool(USSI.update_info) and pw:
-            oc.add(DirectoryObject(
-                key=Callback(ActionMenu, action='update', title='Installing Update'),
-                title='%s Available - Install Update' %str(USSI.update_info['date']),
-                summary=USSI.update_info['notes'] if USSI.update_info['notes'] else None
-                ))
+        oc.add(DirectoryObject(
+            key=Callback(MainMenu),
+            title='%s | %s | Installed' %(str(USSI.current_info['date']), USSI.current_info['branch'])
+            ))
 
         if not pw:
-            oc.add(PopupDirectoryObject(key=Callback(MainMenu), title='Check for Update with Plex Web Client ONLY'))
-        else:
+            oc.add(PopupDirectoryObject(key=Callback(MainMenu), title='View Tools in Plex Web Client'))
+        elif not bool(USSI.update_info):
+            oc.add(DirectoryObject(
+                key=Callback(ActionMenu, action='init', title='Re-Install \"%s\" branch' %Prefs['branch']),
+                title='Re-Install \"%s\" branch' %Prefs['branch'],
+                summary='Re-Install \"%s\" branch from latest commit.' %Prefs['branch']
+                ))
+
+        if bool(USSI.update_info) and (USSI.update_info['branch'] == Prefs['branch']) and pw:
+            oc.add(DirectoryObject(
+                key=Callback(ActionMenu, action='update', title='Installing Update'),
+                title='%s | %s | Available - Install Update' %(str(USSI.update_info['date']), USSI.update_info['branch']),
+                summary=USSI.update_info['notes'] if USSI.update_info['notes'] else None
+                ))
+        elif bool(USSI.update_info):
+            USSI.update_info.clear()
+
+        if pw:
             oc.add(DirectoryObject(
                 key=Callback(ActionMenu, action='check_update', title='Checking For Update'),
                 title='Check For Update', summary='Check GitHub for latest USS release.'
                 ))
+
         oc.add(DirectoryObject(
             key=Callback(HostMenu),
             title='Supported Host', summary='List Curretnly Supported Host.'
@@ -71,7 +84,7 @@ def MainMenu():
             summary=(
                 'UnSupportedServices (USS) is a collection of Service Code not included within the Official Plex Services.bundle.'
                 'UnSupportedServicesTools (USST) will install/update/manage the USS. '
-                'This function will install a fresh/current version of the USS.'
+                'This function will install a fresh/current version of the \"%s\" branch USS.' %Prefs['branch']
                 )
             ))
     else:
@@ -111,9 +124,7 @@ def ActionMenu(action, title):
 def HostMenu():
     oc = ObjectContainer(title2='Supported Host', no_cache=True)
     host_list = USSI.gui_host_list()
-    if host_list:
-        for h in host_list:
-            oc.add(PopupDirectoryObject(key=Callback(HostMenu), title=h))
+    [oc.add(PopupDirectoryObject(key=Callback(HostMenu), title=h)) for h in host_list if host_list]
     return oc
 
 ####################################################################################################
